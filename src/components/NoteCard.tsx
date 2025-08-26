@@ -9,6 +9,7 @@ import {
 import { formatDistanceToNow, format } from 'date-fns';
 import { ptBR } from 'date-fns/locale/pt-BR';
 import { cn } from '@/lib/utils';
+import DOMPurify from 'dompurify';
 
 interface NoteCardProps {
   note: Note;
@@ -91,9 +92,10 @@ export function NoteCard({ note, onEdit, onDelete, onTogglePin, onToggleArchive 
           )}
         </div>
 
-        <p className="text-muted-foreground text-sm line-clamp-3">
-          {truncateContent(content) || 'Sem conteúdo...'}
-        </p>
+            <p
+  className="text-muted-foreground text-sm line-clamp-3 prose prose-invert max-w-none"
+  dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(note.content || "Sem conteúdo...") }}
+              />
 
         {tags.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
