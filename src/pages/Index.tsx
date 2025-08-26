@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Note } from '@/types/note';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { Note, Mood } from '@/types/note';
 import { storage } from '@/lib/storage';
 import { Header } from '@/components/Header';
 import { SearchBar } from '@/components/SearchBar';
@@ -8,6 +8,12 @@ import { NoteEditor } from '@/components/NoteEditor';
 import { useToast } from '@/components/ui/use-toast';
 import { Button } from '@/components/ui/button';
 import { StickyNote } from 'lucide-react';
+import { Smile, Meh, Frown, Zap, Heart } from "lucide-react";
+import { cn } from "@/lib/utils"; // se você já usa, mantenha
+
+
+
+
 
 const Index = () => {
   const { toast } = useToast();
@@ -15,62 +21,68 @@ const Index = () => {
   const [filteredNotes, setFilteredNotes] = useState<Note[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
-  const [availableTags, setAvailableTags] = useState<string[]>([]);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editingNote, setEditingNote] = useState<Note | null>(null);
   const [showArchived, setShowArchived] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [selectedMood, setSelectedMood] = useState<Mood | undefined>(undefined);    
 
-  // Load notes on mount
-  useEffect(() => {
-    loadNotes();
-  }, []);
+  const isMood = (m: any): m is Mood => ['feliz','neutro','triste','animado','deboa'].includes(m);
 
-  // Filter notes when search or tags change
-  useEffect(() => {
-    filterNotes();
-  }, [notes, searchQuery, selectedTags, showArchived]);
+  // ✅ Normaliza cada nota vinda da API
+  const normalizeNote = (n: any): Note => ({
+    id: n.id ?? n._id ?? crypto.randomUUID(),
+    title: n.title ?? "",
+    content: n.content ?? "",
+    tags: Array.isArray(n.tags) ? n.tags : [],
+    attachments: Array.isArray(n.attachments) ? n.attachments : [],
+    archived: !!n.archived,
+    pinned: !!n.pinned,
+    mood: isMood(n.mood) ? n.mood : 'neutro',
+    createdAt: n.createdAt ?? n.created_at,
+    updatedAt: n.updatedAt ?? n.updated_at ?? new Date().toISOString(),
+  });
 
-  // Update available tags when notes change
-  useEffect(() => {
-    setAvailableTags(storage.getAllTags());
+  const availableTags = useMemo(() => {
+    const set = new Set<string>();
+    for (const n of notes) n.tags?.forEach(t => set.add(t));
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [notes]);
 
-  const loadNotes = () => {
-    const loadedNotes = storage.getNotes();
-    setNotes(loadedNotes);
-  };
+  const loadNotes = useCallback(async () => {
+    setLoading(true);
+    try {
+      const raw = await storage.getNotes({
+        archived: showArchived,
+        q: searchQuery || undefined,
+        tags: selectedTags.length ? selectedTags : undefined,
+        mood: selectedMood || undefined,
+      });
+      const normalized = raw.map(normalizeNote);
+      setNotes(normalized);
 
-  const filterNotes = () => {
-    let filtered = notes;
-    
-    // Filter by archived status
-    filtered = filtered.filter(note => note.archived === showArchived);
-    
-    // Filter by search query
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(note => 
-        note.title.toLowerCase().includes(query) ||
-        note.content.toLowerCase().includes(query)
-      );
+      const sorted = [...normalized].sort((a, b) => {
+        if (a.pinned && !b.pinned) return -1;
+        if (!a.pinned && b.pinned) return 1;
+        return new Date(b.updatedAt ?? 0).getTime() - new Date(a.updatedAt ?? 0).getTime();
+      });
+      setFilteredNotes(sorted);
+    } catch (e: any) {
+      console.error(e);
+      toast({
+        title: 'Erro ao carregar notas',
+        description: e?.message ?? String(e),
+        variant: 'destructive',
+      });
+    } finally {
+      setLoading(false);
     }
-    
-    // Filter by selected tags
-    if (selectedTags.length > 0) {
-      filtered = filtered.filter(note =>
-        selectedTags.every(tag => note.tags.includes(tag))
-      );
-    }
-    
-    // Sort by pinned first, then by updated date
-    filtered.sort((a, b) => {
-      if (a.pinned && !b.pinned) return -1;
-      if (!a.pinned && b.pinned) return 1;
-      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-    });
-    
-    setFilteredNotes(filtered);
-  };
+  }, [showArchived, searchQuery, selectedMood, selectedTags, toast]);
+
+  useEffect(() => {
+    loadNotes();
+  }, [loadNotes]);
+
 
   const handleNewNote = () => {
     setEditingNote(null);
@@ -82,42 +94,38 @@ const Index = () => {
     setIsEditorOpen(true);
   };
 
-  const handleDeleteNote = (id: string) => {
-    if (storage.deleteNote(id)) {
-      loadNotes();
-      toast({
-        title: "Nota excluída",
-        description: "A nota foi removida com sucesso",
-      });
+  const handleDeleteNote = async (id: string) => {
+    try {
+      await storage.deleteNote(id);
+      await loadNotes();
+      toast({ title: 'Nota excluída', description: 'A nota foi removida com sucesso' });
+    } catch (e) {
+      toast({ title: 'Erro ao excluir', description: String(e), variant: 'destructive' });
     }
   };
 
-  const handleTogglePin = (id: string) => {
-    const note = notes.find(n => n.id === id);
-    if (note) {
-      storage.updateNote(id, { pinned: !note.pinned });
-      loadNotes();
-      toast({
-        title: note.pinned ? "Nota desafixada" : "Nota fixada",
-        description: note.pinned ? "A nota foi removida dos destaques" : "A nota foi adicionada aos destaques",
-      });
+  const handleTogglePin = async (id: string) => {
+    try {
+      await storage.togglePin(id);
+      await loadNotes();
+      toast({ title: 'Fixação alterada' });
+    } catch (e) {
+      toast({ title: 'Erro ao fixar/desafixar', description: String(e), variant: 'destructive' });
     }
   };
 
-  const handleToggleArchive = (id: string) => {
-    const note = notes.find(n => n.id === id);
-    if (note) {
-      storage.updateNote(id, { archived: !note.archived });
-      loadNotes();
-      toast({
-        title: note.archived ? "Nota desarquivada" : "Nota arquivada",
-        description: note.archived ? "A nota foi restaurada" : "A nota foi arquivada",
-      });
+  const handleToggleArchive = async (id: string) => {
+    try {
+      await storage.toggleArchive(id);
+      await loadNotes();
+      toast({ title: showArchived ? 'Nota desarquivada' : 'Nota arquivada' });
+    } catch (e) {
+      toast({ title: 'Erro ao arquivar/desarquivar', description: String(e), variant: 'destructive' });
     }
   };
 
-  const handleSaveNote = () => {
-    loadNotes();
+  const handleSaveNote = async () => {
+    await loadNotes();
   };
 
   return (
@@ -137,11 +145,18 @@ const Index = () => {
           selectedTags={selectedTags}
         />
 
+        <MoodFilter
+          value={selectedMood}
+          onChange={setSelectedMood}
+        />
+
+        {loading && <div className="text-sm text-muted-foreground">Carregando notas…</div>}
+
         {filteredNotes.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {filteredNotes.map(note => (
               <NoteCard
-                key={note.id}
+                key={(note as any).id ?? (note as any)._id ?? `${note.title}-${note.updatedAt}`}
                 note={note}
                 onEdit={handleEditNote}
                 onDelete={handleDeleteNote}
@@ -151,29 +166,31 @@ const Index = () => {
             ))}
           </div>
         ) : (
-          <div className="flex flex-col items-center justify-center py-20 space-y-4">
-            <div className="bg-gradient-primary p-6 rounded-full shadow-glow">
-              <StickyNote className="w-16 h-16 text-primary-foreground" />
+          !loading && (
+            <div className="flex flex-col items-center justify-center py-20 space-y-4">
+              <div className="bg-gradient-primary p-6 rounded-full shadow-glow">
+                <StickyNote className="w-16 h-16 text-primary-foreground" />
+              </div>
+              <h2 className="text-2xl font-semibold text-foreground">
+                {showArchived ? "Nenhuma nota arquivada" : "Nenhuma nota encontrada"}
+              </h2>
+              <p className="text-muted-foreground text-center max-w-md">
+                {searchQuery || selectedTags.length > 0
+                  ? "Tente ajustar seus filtros de busca"
+                  : showArchived
+                  ? "Suas notas arquivadas aparecerão aqui"
+                  : "Comece criando sua primeira nota"}
+              </p>
+              {!showArchived && !searchQuery && selectedTags.length === 0 && (
+                <Button
+                  onClick={handleNewNote}
+                  className="gap-2 bg-gradient-primary shadow-glow hover:shadow-elevated hover:scale-105 transition-all duration-300"
+                >
+                  Criar primeira nota
+                </Button>
+              )}
             </div>
-            <h2 className="text-2xl font-semibold text-foreground">
-              {showArchived ? "Nenhuma nota arquivada" : "Nenhuma nota encontrada"}
-            </h2>
-            <p className="text-muted-foreground text-center max-w-md">
-              {searchQuery || selectedTags.length > 0
-                ? "Tente ajustar seus filtros de busca"
-                : showArchived
-                ? "Suas notas arquivadas aparecerão aqui"
-                : "Comece criando sua primeira nota"}
-            </p>
-            {!showArchived && !searchQuery && selectedTags.length === 0 && (
-              <Button
-                onClick={handleNewNote}
-                className="gap-2 bg-gradient-primary shadow-glow hover:shadow-elevated hover:scale-105 transition-all duration-300"
-              >
-                Criar primeira nota
-              </Button>
-            )}
-          </div>
+          )
         )}
       </main>
 
@@ -181,10 +198,81 @@ const Index = () => {
         isOpen={isEditorOpen}
         onClose={() => setIsEditorOpen(false)}
         note={editingNote}
-        onSave={handleSaveNote}
+        onSave={async (data) => {
+          if (editingNote?.id) {
+            await storage.updateNote(editingNote.id, data);
+          } else {
+            await storage.createNote({
+              title: data.title ?? "",
+              content: data.content ?? "",
+              tags: data.tags ?? [],
+              mood: data.mood,
+              attachments: data.attachments ?? [],
+            });
+          }
+          await loadNotes();
+        }}
       />
     </div>
   );
 };
 
+
+type MoodOption = { value: Mood; label: string; icon: React.ReactNode; tone: string };
+
+const MOOD_OPTIONS: MoodOption[] = [
+  { value: "feliz",   label: "feliz",   icon: <Smile className="w-4 h-4" />,  tone: "bg-yellow-500/15 text-yellow-300 ring-yellow-400/50" },
+  { value: "neutro",  label: "neutro",  icon: <Meh className="w-4 h-4" />,    tone: "bg-zinc-500/15 text-zinc-300 ring-zinc-400/40" },
+  { value: "triste",  label: "triste",  icon: <Frown className="w-4 h-4" />,  tone: "bg-blue-500/15 text-blue-300 ring-blue-400/50" },
+  { value: "animado", label: "animado", icon: <Zap className="w-4 h-4" />,    tone: "bg-pink-500/15 text-pink-300 ring-pink-400/50" },
+  { value: "deboa",   label: "deboa",   icon: <Heart className="w-4 h-4" />,  tone: "bg-emerald-500/15 text-emerald-300 ring-emerald-400/50" },
+];
+
+function MoodFilter({
+  value,
+  onChange,
+}: {
+  value?: Mood;
+  onChange: (m?: Mood) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {/* Chip "Todos" */}
+      <button
+        type="button"
+        onClick={() => onChange(undefined)}
+        className={cn(
+          "px-3 py-1.5 rounded-full text-xs border transition",
+          value === undefined
+            ? "bg-primary text-primary-foreground border-transparent"
+            : "border-border hover:bg-muted/30"
+        )}
+      >
+        Todos
+      </button>
+
+      {MOOD_OPTIONS.map((opt) => {
+        const active = value === opt.value;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => onChange(active ? undefined : opt.value)}
+            className={cn(
+              "px-3 py-1.5 rounded-full text-xs border flex items-center gap-1 transition",
+              active
+                ? `border-transparent ring-2 ${opt.tone}`
+                : "border-border hover:bg-muted/30"
+            )}
+            aria-pressed={active}
+            title={`Humor ${opt.label}`}
+          >
+            {opt.icon}
+            <span className="capitalize">{opt.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 export default Index;

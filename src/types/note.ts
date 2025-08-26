@@ -1,27 +1,20 @@
-export type Mood = 'happy' | 'neutral' | 'sad' | 'excited' | 'calm' | null;
+export type Mood = 'feliz' | 'neutro' | 'triste' | 'animado' | 'deboa';
 
-export interface Attachment {
+export type Attachment = {
   type: 'image' | 'link' | 'file';
-  url: string;
-  caption?: string;
-}
+  url?: string;
+  name?: string;
+};
 
-export interface Note {
+export type Note = {
   id: string;
   title: string;
   content: string;
   tags: string[];
-  mood: Mood;
-  pinned: boolean;
+  attachments?: Attachment[];   // opcional
   archived: boolean;
-  attachments: Attachment[];
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface NotesState {
-  notes: Note[];
-  searchQuery: string;
-  selectedTags: string[];
-  selectedMood: Mood;
-}
+  pinned: boolean;
+  mood?: Mood;                  // opcional
+  createdAt?: string;           // opcional
+  updatedAt?: string;           // opcional
+};

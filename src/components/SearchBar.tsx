@@ -46,7 +46,7 @@ export function SearchBar({ onSearch, onTagFilter, availableTags, selectedTags }
         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
         <Input
           type="text"
-          placeholder="Search notes..."
+          placeholder="Procurar por..."
           value={searchQuery}
           onChange={(e) => handleSearch(e.target.value)}
           className="pl-10 pr-10 bg-background border-input"
@@ -86,7 +86,7 @@ export function SearchBar({ onSearch, onTagFilter, availableTags, selectedTags }
             <div className="flex items-center justify-between">
               <h4 className="font-medium text-sm flex items-center gap-2">
                 <Hash className="w-4 h-4" />
-                Filter by Tags
+                Filtrar por tags
               </h4>
               {selectedTags.length > 0 && (
                 <Button
@@ -95,7 +95,7 @@ export function SearchBar({ onSearch, onTagFilter, availableTags, selectedTags }
                   onClick={() => onTagFilter([])}
                   className="h-7 px-2 text-xs"
                 >
-                  Clear
+                  Limpar
                 </Button>
               )}
             </div>
@@ -117,7 +117,7 @@ export function SearchBar({ onSearch, onTagFilter, availableTags, selectedTags }
                 ))}
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground">No tags available</p>
+              <p className="text-sm text-muted-foreground">Sem tags disponíveis</p>
             )}
           </div>
         </PopoverContent>

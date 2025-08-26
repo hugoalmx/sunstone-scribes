@@ -1,315 +1,168 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Note, Mood, Attachment } from '@/types/note';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Label } from '@/components/ui/label';
-import { 
-  X, 
-  Hash, 
-  Smile, 
-  Meh, 
-  Frown, 
-  Zap, 
-  Heart,
-  Link,
-  Image as ImageIcon,
-  FileText,
-  Plus,
-  Save
-} from 'lucide-react';
+import { useEffect, useMemo, useState } from "react";
+import { Smile, Meh, Frown, Zap, Heart, X } from 'lucide-react';
+import type { Note, Mood } from "@/types/note";
 import { cn } from '@/lib/utils';
-import { storage } from '@/lib/storage';
-import { useToast } from '@/components/ui/use-toast';
 
-interface NoteEditorProps {
+type NoteEditorProps = {
   isOpen: boolean;
   onClose: () => void;
-  note?: Note | null;
-  onSave: () => void;
-}
+  note: Note | null;
+  onSave: (data: Partial<Note>) => void | Promise<void>;
+};
 
-const moods: { value: Mood; icon: React.ReactNode; label: string }[] = [
-  { value: 'happy', icon: <Smile className="w-5 h-5" />, label: 'Happy' },
-  { value: 'neutral', icon: <Meh className="w-5 h-5" />, label: 'Neutral' },
-  { value: 'sad', icon: <Frown className="w-5 h-5" />, label: 'Sad' },
-  { value: 'excited', icon: <Zap className="w-5 h-5" />, label: 'Excited' },
-  { value: 'calm', icon: <Heart className="w-5 h-5" />, label: 'Calm' },
+// --------- HUMOR (PT-BR) ----------
+const MOODS: Mood[] = ["feliz", "neutro", "triste", "animado", "deboa"];
+const isMood = (m: any): m is Mood => MOODS.includes(m);
+
+const MOOD_OPTIONS: Array<{
+  value: Mood;
+  label: string;
+  icon: React.ReactNode;
+  ring: string;
+  bg: string;
+  text: string;
+}> = [
+  { value: "feliz",   label: "feliz",   icon: <Smile className="w-4 h-4" />,  ring: "ring-yellow-400/50",  bg: "bg-yellow-500/15",  text: "text-yellow-300" },
+  { value: "neutro",  label: "neutro",  icon: <Meh className="w-4 h-4" />,    ring: "ring-zinc-400/40",    bg: "bg-zinc-500/15",    text: "text-zinc-300" },
+  { value: "triste",  label: "triste",  icon: <Frown className="w-4 h-4" />,  ring: "ring-blue-400/50",    bg: "bg-blue-500/15",    text: "text-blue-300" },
+  { value: "animado", label: "animado", icon: <Zap className="w-4 h-4" />,    ring: "ring-pink-400/50",    bg: "bg-pink-500/15",    text: "text-pink-300" },
+  { value: "deboa",   label: "deboa",   icon: <Heart className="w-4 h-4" />,  ring: "ring-emerald-400/50", bg: "bg-emerald-500/15", text: "text-emerald-300" },
 ];
 
 export function NoteEditor({ isOpen, onClose, note, onSave }: NoteEditorProps) {
-  const { toast } = useToast();
-  const [title, setTitle] = useState('');
-  const [content, setContent] = useState('');
-  const [tags, setTags] = useState<string[]>([]);
-  const [tagInput, setTagInput] = useState('');
-  const [mood, setMood] = useState<Mood>(null);
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [attachmentUrl, setAttachmentUrl] = useState('');
-  const [attachmentType, setAttachmentType] = useState<Attachment['type']>('link');
-  const [isSaving, setIsSaving] = useState(false);
+  const [title, setTitle] = useState<string>("");
+  const [content, setContent] = useState<string>("");
+  const [tagsText, setTagsText] = useState<string>("");
+  const [mood, setMood] = useState<Mood | undefined>(undefined);
+  const [attachments, setAttachments] = useState<any[]>([]);
 
   useEffect(() => {
-    if (note) {
-      setTitle(note.title);
-      setContent(note.content);
-      setTags(note.tags);
-      setMood(note.mood);
-      setAttachments(note.attachments);
-    } else {
-      resetForm();
-    }
-  }, [note]);
+    const t = note?.title ?? "";
+    const c = note?.content ?? "";
+    const tags = Array.isArray(note?.tags) ? note.tags : [];
+    const m = isMood(note?.mood) ? (note!.mood as Mood) : undefined;
+    const atts = Array.isArray(note?.attachments) ? note.attachments! : [];
+    setTitle(t);
+    setContent(c);
+    setTagsText(tags.join(", "));
+    setMood(m);
+    setAttachments(atts);
+  }, [note, isOpen]);
 
-  // Autosave
-  useEffect(() => {
-    if (!isOpen || !note) return;
+  const tagsArray = useMemo(
+    () => tagsText.split(",").map(t => t.trim()).filter(Boolean),
+    [tagsText]
+  );
 
-    const timer = setTimeout(() => {
-      handleSave(true);
-    }, 2000);
-
-    return () => clearTimeout(timer);
-  }, [title, content, tags, mood, attachments]);
-
-  const resetForm = () => {
-    setTitle('');
-    setContent('');
-    setTags([]);
-    setTagInput('');
-    setMood(null);
-    setAttachments([]);
-    setAttachmentUrl('');
+  const handleSubmit = async () => {
+    const payload: Partial<Note> = {
+      title: title.trim(),
+      content,
+      tags: tagsArray,
+      mood,                  // 👈 salva o humor PT-BR
+      attachments,
+      updatedAt: new Date().toISOString(),
+    };
+    await onSave(payload);
+    onClose();
   };
 
-  const handleSave = useCallback(async (isAutosave = false) => {
-    if (!title.trim() && !content.trim()) {
-      if (!isAutosave) {
-        toast({
-          title: "Cannot save empty note",
-          description: "Please add a title or content",
-          variant: "destructive"
-        });
-      }
-      return;
-    }
-
-    setIsSaving(true);
-    
-    try {
-      const noteData = {
-        title,
-        content,
-        tags,
-        mood,
-        attachments,
-        pinned: note?.pinned || false,
-        archived: note?.archived || false
-      };
-
-      if (note) {
-        storage.updateNote(note.id, noteData);
-      } else {
-        storage.createNote(noteData);
-      }
-
-      if (!isAutosave) {
-        toast({
-          title: note ? "Note updated" : "Note created",
-          description: isAutosave ? "Autosaved" : "Your note has been saved successfully"
-        });
-        onSave();
-        onClose();
-        resetForm();
-      }
-    } catch (error) {
-      toast({
-        title: "Error saving note",
-        description: "Something went wrong. Please try again.",
-        variant: "destructive"
-      });
-    } finally {
-      setIsSaving(false);
-    }
-  }, [title, content, tags, mood, attachments, note, onSave, onClose, toast]);
-
-  const handleAddTag = () => {
-    if (tagInput.trim() && !tags.includes(tagInput.trim())) {
-      setTags([...tags, tagInput.trim()]);
-      setTagInput('');
-    }
-  };
-
-  const handleRemoveTag = (tag: string) => {
-    setTags(tags.filter(t => t !== tag));
-  };
-
-  const handleAddAttachment = () => {
-    if (attachmentUrl.trim()) {
-      setAttachments([...attachments, { type: attachmentType, url: attachmentUrl.trim() }]);
-      setAttachmentUrl('');
-    }
-  };
-
-  const handleRemoveAttachment = (index: number) => {
-    setAttachments(attachments.filter((_, i) => i !== index));
-  };
+  if (!isOpen) return null;
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto bg-card border-border">
-        <DialogHeader>
-          <DialogTitle className="text-xl text-foreground">
-            {note ? 'Edit Note' : 'New Note'}
-          </DialogTitle>
-        </DialogHeader>
-
-        <div className="space-y-4">
-          <div>
-            <Input
-              placeholder="Note title..."
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="text-lg font-semibold bg-background border-input"
-            />
-          </div>
-
-          <div>
-            <Textarea
-              placeholder="Write your thoughts..."
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              className="min-h-[200px] bg-background border-input resize-none"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label className="text-muted-foreground">Mood</Label>
-            <div className="flex gap-2">
-              {moods.map(({ value, icon, label }) => (
-                <Button
-                  key={value}
-                  type="button"
-                  variant={mood === value ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setMood(mood === value ? null : value)}
-                  className={cn(
-                    "gap-2",
-                    mood === value && `bg-mood-${value} hover:bg-mood-${value}/90 text-white border-transparent`
-                  )}
-                >
-                  {icon}
-                  <span className="hidden sm:inline">{label}</span>
-                </Button>
-              ))}
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label className="text-muted-foreground">Tags</Label>
-            <div className="flex gap-2">
-              <Input
-                placeholder="Add a tag..."
-                value={tagInput}
-                onChange={(e) => setTagInput(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddTag())}
-                className="flex-1 bg-background border-input"
-              />
-              <Button type="button" onClick={handleAddTag} size="icon" variant="outline">
-                <Hash className="w-4 h-4" />
-              </Button>
-            </div>
-            {tags.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {tags.map(tag => (
-                  <Badge key={tag} variant="secondary" className="gap-1">
-                    #{tag}
-                    <X 
-                      className="w-3 h-3 cursor-pointer hover:text-destructive" 
-                      onClick={() => handleRemoveTag(tag)}
-                    />
-                  </Badge>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <Label className="text-muted-foreground">Attachments</Label>
-            <div className="flex gap-2">
-              <Input
-                placeholder="Add URL..."
-                value={attachmentUrl}
-                onChange={(e) => setAttachmentUrl(e.target.value)}
-                className="flex-1 bg-background border-input"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                onClick={() => setAttachmentType('link')}
-                className={attachmentType === 'link' ? 'bg-primary text-primary-foreground' : ''}
-              >
-                <Link className="w-4 h-4" />
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                onClick={() => setAttachmentType('image')}
-                className={attachmentType === 'image' ? 'bg-primary text-primary-foreground' : ''}
-              >
-                <ImageIcon className="w-4 h-4" />
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                onClick={() => setAttachmentType('file')}
-                className={attachmentType === 'file' ? 'bg-primary text-primary-foreground' : ''}
-              >
-                <FileText className="w-4 h-4" />
-              </Button>
-              <Button type="button" onClick={handleAddAttachment} size="icon" variant="default">
-                <Plus className="w-4 h-4" />
-              </Button>
-            </div>
-            {attachments.length > 0 && (
-              <div className="space-y-1">
-                {attachments.map((attachment, index) => (
-                  <div key={index} className="flex items-center gap-2 text-sm text-muted-foreground">
-                    {attachment.type === 'link' && <Link className="w-4 h-4" />}
-                    {attachment.type === 'image' && <ImageIcon className="w-4 h-4" />}
-                    {attachment.type === 'file' && <FileText className="w-4 h-4" />}
-                    <span className="flex-1 truncate">{attachment.url}</span>
-                    <X 
-                      className="w-4 h-4 cursor-pointer hover:text-destructive" 
-                      onClick={() => handleRemoveAttachment(index)}
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="flex justify-end gap-2 pt-4 border-t border-border">
-            <Button type="button" variant="outline" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button 
-              type="button" 
-              onClick={() => handleSave(false)}
-              disabled={isSaving}
-              className="gap-2"
-            >
-              <Save className="w-4 h-4" />
-              {isSaving ? 'Saving...' : 'Save Note'}
-            </Button>
-          </div>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-2xl rounded-2xl bg-background p-5 shadow-lg border">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold">{note ? "Editar nota" : "Nova nota"}</h2>
+          <button onClick={onClose} className="px-2 py-1 rounded-lg hover:bg-muted">Fechar</button>
         </div>
-      </DialogContent>
-    </Dialog>
+
+        <div className="grid gap-3">
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Título"
+            className="px-3 py-2 rounded-xl border bg-background"
+          />
+
+          <textarea
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            placeholder="Conteúdo"
+            className="min-h-[160px] px-3 py-2 rounded-xl border bg-background"
+          />
+
+          <div className="grid sm:grid-cols-2 gap-3">
+            <input
+              value={tagsText}
+              onChange={(e) => setTagsText(e.target.value)}
+              placeholder="Tags (separe por vírgula)"
+              className="px-3 py-2 rounded-xl border bg-background"
+            />
+
+            {/* 🔥 Seletor de humor com ícones */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Humor</span>
+                {mood && (
+                  <button
+                    type="button"
+                    onClick={() => setMood(undefined)}
+                    className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
+                    aria-label="Limpar humor"
+                  >
+                    <X className="w-3 h-3" /> limpar
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-5 gap-2">
+                {MOOD_OPTIONS.map(opt => {
+                  const active = mood === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setMood(opt.value)}
+                      className={cn(
+                        "w-full rounded-xl px-2 py-2 border text-xs flex flex-col items-center gap-1 transition",
+                        active
+                          ? `border-transparent ring-2 ${opt.ring} ${opt.bg} ${opt.text}`
+                          : "border-border hover:bg-muted/30"
+                      )}
+                      aria-pressed={active}
+                      aria-label={`Humor ${opt.label}`}
+                      title={opt.label}
+                    >
+                      {opt.icon}
+                      <span className="capitalize">{opt.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Se não usar attachments, remova este bloco */}
+          {/* <div className="flex items-center gap-2 text-sm">
+            <button
+              className="px-3 py-1.5 rounded-lg border"
+              onClick={() => setAttachments((a) => [...a, { type: "file" }])}
+            >
+              + Anexo
+            </button>
+            <span className="text-muted-foreground">{attachments.length} anexo(s)</span>
+          </div> */}
+        </div>
+
+        <div className="mt-5 flex justify-end gap-2">
+          <button onClick={onClose} className="px-4 py-2 rounded-xl border">Cancelar</button>
+          <button onClick={handleSubmit} className="px-4 py-2 rounded-xl bg-primary text-primary-foreground">
+            Salvar
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
+  
