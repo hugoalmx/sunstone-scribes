@@ -27,8 +27,11 @@ const NoteSchema = new mongoose.Schema(
     pinned: { type: Boolean, default: false },
     // 👇 Enum PT-BR + default corrigido
     mood: { type: String, enum: ['feliz','neutro','triste','animado','deboa'], default: 'neutro' },
+    progress: { type: Number, enum: [0, 25, 50, 75, 100], default: 0 },
   },
   { timestamps: { createdAt: 'createdAt', updatedAt: 'updatedAt' } }
+  
+
 );
 
 const Note = mongoose.model('Note', NoteSchema);
@@ -66,6 +69,16 @@ const buildQuery = (q, tags, archived, mood) => {
 
 // --- Rotas ---
 app.get('/health', (_, res) => res.json({ ok: true }));
+
+app.get('/notes/:id', async (req, res) => {
+  try {
+    const note = await Note.findById(req.params.id)
+    if (!note) return res.status(404).json({ message: 'Not found' })
+    res.json(note)
+  } catch (e) {
+    res.status(400).json({ message: 'ID inválido' })
+  }
+})
 
 // Listar (suporta ?q=&tags=a,b&archived=true/false&mood=feliz|neutro|...)
 app.get('/notes', async (req, res) => {
@@ -106,6 +119,8 @@ app.put('/notes/:id', async (req, res) => {
   }
 });
 
+
+
 // Ações rápidas
 app.patch('/notes/:id/pin', async (req, res) => {
   try {
@@ -133,15 +148,42 @@ app.patch('/notes/:id/archive', async (req, res) => {
   }
 });
 
+app.patch('/notes/:id/progress', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { progress } = req.body;
+
+    // valida valores permitidos
+    if (![0, 50, 75, 100].includes(progress)) {
+      return res.status(400).json({ message: 'Valor inválido de progress' });
+    }
+
+    const updated = await Note.findByIdAndUpdate(
+      id,
+      { progress },
+      { new: true }
+    );
+
+    if (!updated) {
+      return res.status(404).json({ message: 'Nota não encontrada' });
+    }
+
+    res.json(updated);
+  } catch (err) {
+    console.error('Erro no PATCH /notes/:id/progress', err);
+    res.status(500).json({ message: 'Erro ao atualizar progresso' });
+  }
+});
+
 // Tags agregadas
 app.get('/tags', async (_req, res) => {
   try {
     const tags = await Note.aggregate([
       { $unwind: { path: '$tags', preserveNullAndEmptyArrays: false } },
-      { $group: { _id: '$tags', count: { $sum: 1 } } },
-      { $sort: { _id: 1 } }
+      { $group: { id: '$tags', count: { $sum: 1 } } },
+      { $sort: { id: 1 } }
     ]);
-    res.json(tags.map(t => t._id));
+    res.json(tags.map(t => t.id));
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

@@ -39,7 +39,7 @@ export function Header({ onNewNote, showArchived, onToggleArchived, notesCount }
               )}
             >
               <Archive className="w-4 h-4" />
-              <span className="hidden sm:inline">Arquivadas</span>
+              <span className="hidden sm:inline">Concluidas</span>
             </Button>
             
             <Button

@@ -1,8 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { Smile, Meh, Frown, Zap, Heart, X } from 'lucide-react';
-import type { Note, Mood } from "@/types/note";
-import { cn } from '@/lib/utils';
 import ReactQuill from "react-quill";
+import { Smile, Meh, Frown, Zap, Heart, X, Settings2 } from "lucide-react";
+import type { Note, Mood } from "@/types/note";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { progressLabel, progressColorClass } from "@/lib/progress";
 
 type NoteEditorProps = {
   isOpen: boolean;
@@ -37,19 +41,24 @@ const quillFormats = [
 
 export function NoteEditor({ isOpen, onClose, note, onSave }: NoteEditorProps) {
   const [title, setTitle] = useState<string>("");
-  const [content, setContent] = useState<string>(""); // Quill usa HTML string
+  const [content, setContent] = useState<string>(""); // HTML do Quill
   const [tagsText, setTagsText] = useState<string>("");
   const [mood, setMood] = useState<Mood | undefined>(undefined);
+  const [progress, setProgress] = useState<0|25|50|75|100>(0);
 
+  // carrega dados quando abrir/nota mudar
   useEffect(() => {
     const t = note?.title ?? "";
-    const c = note?.content ?? ""; // se vier markdown/texto puro, tudo bem — Quill renderiza texto
+    const c = note?.content ?? "";
     const tags = Array.isArray(note?.tags) ? note.tags : [];
     const m = note?.mood as Mood | undefined;
+    const p = ([0,25,50,75,100].includes(Number(note?.progress)) ? Number(note?.progress) : 0) as 0|25|50|75|100;
+
     setTitle(t);
     setContent(c);
     setTagsText(tags.join(", "));
     setMood(m);
+    setProgress(p);
   }, [note, isOpen]);
 
   const tagsArray = useMemo(
@@ -60,9 +69,10 @@ export function NoteEditor({ isOpen, onClose, note, onSave }: NoteEditorProps) {
   const handleSubmit = async () => {
     const payload: Partial<Note> = {
       title: title.trim(),
-      content,            // 👈 HTML do Quill
+      content,            // HTML do Quill
       tags: tagsArray,
       mood,
+      progress,           // 👈 salva o progresso
       updatedAt: new Date().toISOString(),
     };
     await onSave(payload);
@@ -73,13 +83,17 @@ export function NoteEditor({ isOpen, onClose, note, onSave }: NoteEditorProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-2xl rounded-2xl bg-background p-5 shadow-lg border">
+      <div className="w-full max-w-3xl rounded-2xl bg-background p-5 shadow-lg border">
+        {/* Header */}
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold">{note ? "Editar nota" : "Nova nota"}</h2>
-          <button onClick={onClose} className="px-2 py-1 rounded-lg hover:bg-muted">Fechar</button>
+          <Button variant="ghost" onClick={onClose} className="h-8 px-2">
+            Fechar
+          </Button>
         </div>
 
-        <div className="grid gap-3">
+        <div className="grid gap-4">
+          {/* Título */}
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
@@ -99,6 +113,7 @@ export function NoteEditor({ isOpen, onClose, note, onSave }: NoteEditorProps) {
             />
           </div>
 
+          {/* Tags */}
           <input
             value={tagsText}
             onChange={(e) => setTagsText(e.target.value)}
@@ -106,7 +121,7 @@ export function NoteEditor({ isOpen, onClose, note, onSave }: NoteEditorProps) {
             className="px-3 py-2 rounded-xl border bg-background"
           />
 
-          {/* Seletor de humor com ícones */}
+          {/* Humor */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">Humor</span>
@@ -146,13 +161,68 @@ export function NoteEditor({ isOpen, onClose, note, onSave }: NoteEditorProps) {
               })}
             </div>
           </div>
+
+          {/* Progresso */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">Progresso</span>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span>{progressLabel(progress)} • {progress}%</span>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button size="sm" variant="outline">
+                      <Settings2 className="w-4 h-4 mr-2" />
+                      Alterar
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => setProgress(0)}>Em aberto (0%)</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setProgress(25)}>Iniciado (25%)</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setProgress(50)}>Em progresso (50%)</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setProgress(75)}>Ajustes finais (75%)</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setProgress(100)}>Concluído (100%)</DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </div>
+
+            {/* Barra (shadcn) com overlay colorido por status */}
+            <div className="relative">
+              <Progress value={progress} className="h-2 [&>div]:bg-transparent" />
+              <div
+                className={`absolute left-0 top-0 h-2 rounded-full transition-all ${progressColorClass(progress)}`}
+                style={{ width: `${progress}%` }}
+                role="progressbar"
+                aria-valuenow={progress}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-label={`Progresso ${progress}% - ${progressLabel(progress)}`}
+              />
+            </div>
+
+            {/* Botões rápidos (opcional) */}
+            <div className="flex flex-wrap gap-2">
+              {[0,25,50,75,100].map(v => (
+                <Button
+                  key={v}
+                  type="button"
+                  size="sm"
+                  variant={progress === v ? "default" : "outline"}
+                  onClick={() => setProgress(v as 0|25|50|75|100)}
+                >
+                  {progressLabel(v)} ({v}%)
+                </Button>
+              ))}
+            </div>
+          </div>
         </div>
 
+        {/* Ações */}
         <div className="mt-5 flex justify-end gap-2">
-          <button onClick={onClose} className="px-4 py-2 rounded-xl border">Cancelar</button>
-          <button onClick={handleSubmit} className="px-4 py-2 rounded-xl bg-primary text-primary-foreground">
+          <Button variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button onClick={handleSubmit} className="bg-primary text-primary-foreground">
             Salvar
-          </button>
+          </Button>
         </div>
       </div>
     </div>

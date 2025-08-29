@@ -1,15 +1,28 @@
+import { useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 import { Note, Mood } from '@/types/note';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   Pin, PinOff, Trash2, Edit, Archive,
-  Smile, Meh, Frown, Heart, Zap
+  Smile, Meh, Frown, Heart, Zap, Settings2
 } from 'lucide-react';
 import { formatDistanceToNow, format } from 'date-fns';
 import { ptBR } from 'date-fns/locale/pt-BR';
 import { cn } from '@/lib/utils';
 import DOMPurify from 'dompurify';
+
+import { Progress } from '@/components/ui/progress';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem
+} from '@/components/ui/dropdown-menu';
+
+import { progressColorClass, progressLabel } from '@/lib/progress';
+import { storage } from '@/lib/storage';
 
 interface NoteCardProps {
   note: Note;
@@ -36,33 +49,59 @@ const moodTone: Record<Mood, string> = {
 };
 
 export function NoteCard({ note, onEdit, onDelete, onTogglePin, onToggleArchive }: NoteCardProps) {
-  const id = note.id;
+  const navigate = useNavigate();
+  const id = (note as any)._id ?? (note as any).id;
+
   const title = note.title ?? '';
-  const content = note.content ?? '';
   const tags = Array.isArray(note.tags) ? note.tags : [];
   const mood = note.mood as Mood | undefined;
 
+  // progresso normalizado (0 | 50 | 75 | 100)
+  const initialP = ([0, 25, 50, 75, 100].includes(Number(note.progress)) ? Number(note.progress) : 0) as 0|25|50|75|100;
+  const [p, setP] = useState<0|25|50|75|100>(initialP);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    // se o note mudar externamente, sincroniza o local
+    const next = ([0, 25, 50, 75, 100].includes(Number(note.progress)) ? Number(note.progress) : 0) as 0|25|50|75|100;
+    setP(next);
+  }, [note.progress]);
+
+  // datas
   const createdISO = note?.createdAt ?? note?.updatedAt ?? new Date().toISOString();
   const created = new Date(createdISO);
-  const createdLabel = isNaN(created.getTime())
-    ? ''
-    : format(created, 'dd/MM/yyyy', { locale: ptBR });
+  const createdLabel = isNaN(created.getTime()) ? '' : format(created, 'dd/MM/yyyy', { locale: ptBR });
   const relative = isNaN(created.getTime())
     ? ''
-    : formatDistanceToNow(new Date(note.updatedAt ?? createdISO), {
-        addSuffix: true,
-        locale: ptBR,
-      });
+    : formatDistanceToNow(new Date(note.updatedAt ?? createdISO), { addSuffix: true, locale: ptBR });
 
-  const truncateContent = (text: string, maxLength = 150) =>
-    text.length <= maxLength ? text : text.substring(0, maxLength) + '...';
+  // handlers
+  const changeProgress = async (val: 0|25|50|75|100) => {
+    if (!id) return;
+    setP(val);            // feedback instantâneo
+    setSaving(true);
+    try {
+      // se você criar storage.setProgress, troque por ele; aqui uso updateNote que você já tem
+      await storage.updateNote(id, { progress: val } as any);
+    } catch (e) {
+      // rollback visual se falhar
+      setP(initialP);
+      // opcional: usar seu toast aqui
+      console.error('Erro ao atualizar progresso', e);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <Card
       className={cn(
-        'group relative p-5 transition-all duration-300 hover:shadow-elevated hover:-translate-y-1 bg-gradient-card border-border',
+        'group relative p-5 transition-all duration-300 hover:shadow-elevated hover:-translate-y-1 bg-gradient-card border-border cursor-pointer',
         note.pinned && 'border-primary shadow-glow'
       )}
+      onClick={() => navigate(`/note/${id}`)}
+      role="button"
+      aria-label={`Abrir nota ${title || 'Sem título'}`}
     >
       {note.pinned && (
         <div className="absolute -top-2 -right-2 bg-primary text-primary-foreground rounded-full p-1.5 shadow-glow">
@@ -71,6 +110,7 @@ export function NoteCard({ note, onEdit, onDelete, onTogglePin, onToggleArchive 
       )}
 
       <div className="space-y-3">
+        {/* Cabeçalho */}
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1">
             <div className="text-sm text-muted-foreground">{createdLabel}</div>
@@ -80,37 +120,64 @@ export function NoteCard({ note, onEdit, onDelete, onTogglePin, onToggleArchive 
           </div>
 
           {mood && (
-            <div
-              className={cn(
-                'px-2 py-1 rounded-lg text-xs font-medium flex items-center gap-1',
-                moodTone[mood]
-              )}
-            >
+            <div className={cn('px-2 py-1 rounded-lg text-xs font-medium flex items-center gap-1', moodTone[mood])}>
               {moodIcons[mood]}
               <span className="capitalize hidden sm:inline">{mood}</span>
             </div>
           )}
         </div>
 
-            <p
-  className="text-muted-foreground text-sm line-clamp-3 prose prose-invert max-w-none"
-  dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(note.content || "Sem conteúdo...") }}
-              />
+        {/* Preview seguro do conteúdo */}
+        <div
+          className="text-muted-foreground text-sm line-clamp-3 prose prose-invert max-w-none"
+          dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(note.content || "Sem conteúdo...") }}
+        />
 
+        {/* Tags */}
         {tags.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
             {tags.map((tag) => (
-              <Badge
-                key={tag}
-                variant="secondary"
-                className="text-xs bg-secondary/50 hover:bg-secondary"
-              >
+              <Badge key={tag} variant="secondary" className="text-xs bg-secondary/50 hover:bg-secondary">
                 #{tag}
               </Badge>
             ))}
           </div>
         )}
 
+        {/* CTA Ler nota */}
+        <div className="pt-1">
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={(e) => { e.stopPropagation(); navigate(`/note/${id}`); }}
+          >
+            Ler nota
+          </Button>
+        </div>
+
+        {/* PROGRESSO */}
+        <div className="mt-2 space-y-1">
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>Status: {progressLabel(p)}</span>
+            <span>{p}%</span>
+          </div>
+
+          {/* usamos Progress do shadcn, apagamos a cor interna e sobrepomos nossa barra colorida */}
+          <div className="relative">
+            <Progress value={p} className="h-2 [&>div]:bg-transparent" />
+            <div
+              className={cn('absolute left-0 top-0 h-2 rounded-full transition-all', progressColorClass(p), saving && 'animate-pulse')}
+              style={{ width: `${p}%` }}
+              role="progressbar"
+              aria-valuenow={p}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label={`Progresso ${p}% - ${progressLabel(p)}`}
+            />
+          </div>
+        </div>
+
+        {/* Ações */}
         <div className="flex items-center justify-between pt-2 border-t border-border/50">
           <span className="text-xs text-muted-foreground">{relative}</span>
 
@@ -119,15 +186,37 @@ export function NoteCard({ note, onEdit, onDelete, onTogglePin, onToggleArchive 
               variant="ghost"
               size="icon"
               className="h-8 w-8 hover:text-primary"
-              onClick={() => onEdit(note)}
+              onClick={(e) => { e.stopPropagation(); onEdit(note); }}
             >
               <Edit className="w-4 h-4" />
             </Button>
+
+            {/* MENU DE STATUS */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 hover:text-primary"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <Settings2 className="w-4 h-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                <DropdownMenuItem onClick={() => changeProgress(0)}> {progressLabel(0)} (0%) </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => changeProgress(25)}> {progressLabel(25)} (25%) </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => changeProgress(50)}> {progressLabel(50)} (50%) </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => changeProgress(75)}> {progressLabel(75)} (75%) </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => changeProgress(100)}> {progressLabel(100)} (100%) </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
             <Button
               variant="ghost"
               size="icon"
               className="h-8 w-8 hover:text-primary"
-              onClick={() => onTogglePin(id)}
+              onClick={(e) => { e.stopPropagation(); onTogglePin(id); }}
             >
               {note.pinned ? <PinOff className="w-4 h-4" /> : <Pin className="w-4 h-4" />}
             </Button>
@@ -135,7 +224,7 @@ export function NoteCard({ note, onEdit, onDelete, onTogglePin, onToggleArchive 
               variant="ghost"
               size="icon"
               className="h-8 w-8 hover:text-primary"
-              onClick={() => onToggleArchive(id)}
+              onClick={(e) => { e.stopPropagation(); onToggleArchive(id); }}
             >
               <Archive className="w-4 h-4" />
             </Button>
@@ -143,7 +232,7 @@ export function NoteCard({ note, onEdit, onDelete, onTogglePin, onToggleArchive 
               variant="ghost"
               size="icon"
               className="h-8 w-8 hover:text-destructive"
-              onClick={() => onDelete(id)}
+              onClick={(e) => { e.stopPropagation(); onDelete(id); }}
             >
               <Trash2 className="w-4 h-4" />
             </Button>

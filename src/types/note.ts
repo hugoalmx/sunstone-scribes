@@ -17,4 +17,7 @@ export type Note = {
   mood?: Mood;                  // opcional
   createdAt?: string;           // opcional
   updatedAt?: string;           // opcional
+
+  progress?: 0 | 25 | 50 | 75 | 100; // opcional
+  
 };

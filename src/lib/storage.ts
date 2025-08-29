@@ -8,9 +8,22 @@ export interface StorageAPI {
   togglePin(id: string): Promise<Note>;
   toggleArchive(id: string): Promise<Note>;
   getAllTags(): Promise<string[]>;
+   
 }
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:4000";
+
+async function http<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${API}${path}`, init);
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return res.json() as Promise<T>;
+}
+
+export async function getNoteById(id: string) {
+  const res = await fetch(`${API}/notes/${id}`)
+  if (!res.ok) throw new Error("Nota não encontrada")
+  return (await res.json()) as Note;
+}
 
 export const storage: StorageAPI = {
   async getNotes(params) {
@@ -22,7 +35,11 @@ export const storage: StorageAPI = {
     const res = await fetch(`${API}/notes?${qp.toString()}`);
     if (!res.ok) throw new Error("Erro ao listar notas");
     return res.json();
+
   },
+  
+
+  
 
   async createNote(data) {
     const res = await fetch(`${API}/notes`, {
@@ -66,4 +83,10 @@ export const storage: StorageAPI = {
     if (!res.ok) throw new Error("Erro ao obter tags");
     return res.json();
   },
-};
+
+}
+
+
+
+
+

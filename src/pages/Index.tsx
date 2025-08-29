@@ -1,4 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useNavigate, useLocation } from "react-router-dom";
+
 import { Note, Mood } from '@/types/note';
 import { storage } from '@/lib/storage';
 import { Header } from '@/components/Header';
@@ -41,6 +43,7 @@ const Index = () => {
     mood: isMood(n.mood) ? n.mood : 'neutro',
     createdAt: n.createdAt ?? n.created_at,
     updatedAt: n.updatedAt ?? n.updated_at ?? new Date().toISOString(),
+    progress: (n.progress ?? 0) as 0 | 25 | 50 | 75 | 100,
   });
 
   const availableTags = useMemo(() => {
@@ -82,6 +85,29 @@ const Index = () => {
   useEffect(() => {
     loadNotes();
   }, [loadNotes]);
+
+  const location = useLocation()
+  const navigate = useNavigate()
+
+  useEffect(() => {
+  const st = location.state as { editId?: string } | null
+  if (!st?.editId) return
+
+  ;(async () => {
+    let n = notes.find(x => x.id === st.editId)
+
+    if (!n) {
+      try {
+        const raw = await storage.getNotes({})
+        const hit = raw.find((r: any) => r._id === st.editId || r.id === st.editId)
+        if (hit) n = normalizeNote(hit)
+      } catch {}
+    }
+
+    if (n) handleEditNote(n)
+    navigate(".", { replace: true, state: null })
+  })()
+}, [location.state, notes])
 
 
   const handleNewNote = () => {

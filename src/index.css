@@ -81,3 +81,10 @@ All colors MUST be HSL.
     @apply bg-background text-foreground;
   }
 }
+
+
+.progress-indicator-white [role="progressbar"] > div { background-color: #fff; }
+.progress-indicator-yellow [role="progressbar"] > div { background-color: rgb(255, 0, 0); } /* red-400 */
+.progress-indicator-yellow [role="progressbar"] > div { background-color: rgb(250 204 21); } /* yellow-400 */
+.progress-indicator-orange [role="progressbar"] > div { background-color: rgb(251 146 60); } /* orange-400 */
+.progress-indicator-emerald [role="progressbar"] > div { background-color: rgb(16 185 129); } /* emerald-500 */

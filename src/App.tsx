@@ -5,7 +5,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
+import NoteRead from "./pages/NoteRead";
 import "react-quill/dist/quill.bubble.css";
+
 
 
 const queryClient = new QueryClient();
@@ -18,6 +20,10 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Index />} />
+          <Route path="/note/:_id" element={<NoteRead />} />
+          <Route path="/edit/:id" element={<Index />} />
+          
+          
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
