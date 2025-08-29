@@ -190,3 +190,7 @@ app.get('/tags', async (_req, res) => {
 });
 
 app.listen(PORT, () => console.log(`🚀 API em http://localhost:${PORT}`));
+
+fetch("https://ifconfig.me/ip").then(r => r.text()).then(ip => {
+  console.log("Egress IP (Render):", ip.trim());
+}).catch(()=>{});
