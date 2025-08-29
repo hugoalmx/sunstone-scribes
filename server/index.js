@@ -67,6 +67,22 @@ const buildQuery = (q, tags, archived, mood) => {
   return query;
 };
 
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      // permite ferramentas sem origin (ex: curl/health)
+      if (!origin) return cb(null, true);
+      if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+      return cb(new Error("CORS not allowed: " + origin));
+    },
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: false, // deixe false se você NÃO usa cookies/autenticação
+  })
+);
+
+app.options("*", cors());
+
 // --- Rotas ---
 app.get('/health', (_, res) => res.json({ ok: true }));
 
