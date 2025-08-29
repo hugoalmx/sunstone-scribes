@@ -13,11 +13,29 @@ export interface StorageAPI {
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:4000";
 
-async function http<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API}${path}`, init);
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-  return res.json() as Promise<T>;
+// 🔎 debug: ver no console do site qual API está sendo usada
+if (typeof window !== "undefined") {
+  // só loga uma vez
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (window as any).__API = API;
+  // use console.info pra ficar fácil de achar
+  // comente depois do diagnóstico
+  console.info("[Sunstone] VITE_API_URL em runtime:", API);
 }
+
+async function http<T>(path: string, init?: RequestInit): Promise<T> {
+  const url = `${API}${path}`;
+  try {
+    const res = await fetch(url, init);
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText} @ ${url}`);
+    return (await res.json()) as T;
+  } catch (err) {
+    console.error("[Sunstone] Fetch falhou:", url, err);
+    throw err;
+  }
+}
+
+
 
 export async function getNoteById(id: string) {
   const res = await fetch(`${API}/notes/${id}`)
