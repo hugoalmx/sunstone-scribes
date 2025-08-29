@@ -6,7 +6,7 @@ import cors from 'cors';
 const app = express();
 
 // Se quiser restringir a origem, use: cors({ origin: 'http://localhost:8080' })
-app.use(cors({ origin: ['http://localhost:8080', 'https://SEU-SITE.vercel.app'] }))
+app.use(cors({ origin: ['http://localhost:8080', 'https://sunstone-scribes.vercel.app/'] }))
 app.use(express.json({ limit: '1mb' }));
 
 // --- Conexão MongoDB ---
