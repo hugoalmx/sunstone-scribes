@@ -6,8 +6,25 @@ import cors from 'cors';
 const app = express();
 
 // Se quiser restringir a origem, use: cors({ origin: 'http://localhost:8080' })
-app.use(cors({ origin: ['http://localhost:8080', 'https://sunstone-scribes.vercel.app/'] }))
+
+const ALLOWED_ORIGINS = [
+  "http://localhost:5173",
+  "https://sunstone-scribes.vercel.app", // <-- seu domínio no Vercel
+];
 app.use(express.json({ limit: '1mb' }));
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      // permite ferramentas sem origin (ex: curl/health)
+      if (!origin) return cb(null, true);
+      if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+      return cb(new Error("CORS not allowed: " + origin));
+    },
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: false, // deixe false se você NÃO usa cookies/autenticação
+  })
+);
 
 // --- Conexão MongoDB ---
 const { MONGODB_URI, PORT = 4000 } = process.env;
@@ -67,19 +84,6 @@ const buildQuery = (q, tags, archived, mood) => {
   return query;
 };
 
-app.use(
-  cors({
-    origin: (origin, cb) => {
-      // permite ferramentas sem origin (ex: curl/health)
-      if (!origin) return cb(null, true);
-      if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
-      return cb(new Error("CORS not allowed: " + origin));
-    },
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-    credentials: false, // deixe false se você NÃO usa cookies/autenticação
-  })
-);
 
 app.options("*", cors());
 
