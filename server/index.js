@@ -38,7 +38,7 @@ mongoose.connect(MONGODB_URI).then(() => {
 const NoteSchema = new mongoose.Schema(
   {
     title: { type: String, default: "" },
-    content: { type: String, default: "" },
+    content: { type: String, required: true},
     tags: { type: [String], default: [] },
     archived: { type: Boolean, default: false },
     pinned: { type: Boolean, default: false },
@@ -50,6 +50,29 @@ const NoteSchema = new mongoose.Schema(
   
 
 );
+
+// util pra transformar HTML do Quill em texto "real"
+function stripHtmlToText(html = '') {
+  return String(html)
+    .replace(/<[^>]*>/g, ' ')   // remove tags
+    .replace(/&nbsp;/g, ' ')    // nbsp
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// valida conteúdo não-vazio (considera <p><br></p>)
+NoteSchema.path('content').validate(function (v) {
+  return stripHtmlToText(v).length > 0;
+}, 'Conteúdo não pode ser vazio');
+
+// se não vier título, gera a partir do conteúdo
+NoteSchema.pre('save', function(next) {
+  if (!this.title?.trim()) {
+    const text = stripHtmlToText(this.content);
+    this.title = text.slice(0, 60) || 'Sem título';
+  }
+  next();
+});
 
 const Note = mongoose.model('Note', NoteSchema);
 
@@ -119,7 +142,8 @@ app.post('/notes', async (req, res) => {
     const note = await Note.create({ title, content, tags, mood });
     res.status(201).json(note);
   } catch (e) {
-    res.status(400).json({ error: e.message });
+    const msg = e?.name === 'ValidationError' ? e.message : 'Erro ao criar nota';
+    res.status(400).json({ error: msg });
   }
 });
 
@@ -174,7 +198,7 @@ app.patch('/notes/:id/progress', async (req, res) => {
     const { progress } = req.body;
 
     // valida valores permitidos
-    if (![0, 50, 75, 100].includes(progress)) {
+    if (![0, 25, 50, 75, 100].includes(progress)) {
       return res.status(400).json({ message: 'Valor inválido de progress' });
     }
 
@@ -192,6 +216,23 @@ app.patch('/notes/:id/progress', async (req, res) => {
   } catch (err) {
     console.error('Erro no PATCH /notes/:id/progress', err);
     res.status(500).json({ message: 'Erro ao atualizar progresso' });
+  }
+});
+
+// Excluir
+app.delete('/notes/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ error: 'ID inválido' });
+    }
+    const deleted = await Note.findByIdAndDelete(id);
+    if (!deleted) return res.status(404).json({ error: 'Nota não encontrada' });
+    // 204 = sucesso sem body
+    return res.status(204).send();
+  } catch (e) {
+    console.error('DELETE /notes/:id', e);
+    return res.status(500).json({ error: 'Erro ao excluir nota' });
   }
 });
 

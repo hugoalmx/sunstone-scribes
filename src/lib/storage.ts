@@ -60,6 +60,15 @@ export const storage: StorageAPI = {
   
 
   async createNote(data) {
+      const plain = (html = '') =>
+     String(html)
+       .replace(/<[^>]*>/g, ' ')
+       .replace(/&nbsp;/g, ' ')
+       .replace(/\s+/g, ' ')
+       .trim();
+   if (!data?.content || plain(data.content).length === 0) {
+     throw new Error('Conteúdo não pode ser vazio');
+   }
     const res = await fetch(`${API}/notes`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
